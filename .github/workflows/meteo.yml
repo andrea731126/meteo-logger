@@ -1,0 +1,27 @@
+name: MeteoLogger
+
+on:
+  schedule:
+    - cron: '0 5-23 * * *'
+  workflow_dispatch:
+
+jobs:
+  meteo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch meteo
+        env:
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        run: python fetch_meteo.py
+      - name: Save CSV
+        run: |
+          git config user.name "MeteoBot"
+          git config user.email "bot@meteo.com"
+          git add data/ || true
+          git diff --staged --quiet || git commit -m "meteo $(date '+%Y-%m-%d %H:%M')"
+          git push || true
