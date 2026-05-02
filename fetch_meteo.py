@@ -24,6 +24,20 @@ URL = (f"https://api.open-meteo.com/v1/forecast"
        f"precipitation,wind_speed_10m,wind_direction_10m,weather_code,pressure_msl"
        f"&timezone=auto")
 
+def get_location_name():
+    try:
+        geo = f"https://nominatim.openstreetmap.org/reverse?lat={LATITUDE}&lon={LONGITUDE}&format=json"
+        req = urllib.request.Request(geo)
+        req.add_header("User-Agent", "MeteoLogger/1.0")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+        addr = data.get("address", {})
+        city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("county", "")
+        country = addr.get("country", "")
+        return f"{city}, {country}".strip(", ")
+    except:
+        return f"{LATITUDE}, {LONGITUDE}"
+
 def dew_point(t, rh):
     a, b = 17.27, 237.7
     alpha = ((a * t) / (b + t)) + math.log(rh / 100.0)
@@ -36,8 +50,10 @@ def fetch():
     t = float(c.get("temperature_2m", 0))
     rh = float(c.get("relative_humidity_2m", 0))
     now = datetime.now(timezone.utc).astimezone()
+    localita = get_location_name()
     return {
         "timestamp": now.strftime("%Y-%m-%d %H:%M"),
+        "localita": localita,
         "lat": round(LATITUDE, 4),
         "lon": round(LONGITUDE, 4),
         "temp_c": t,
@@ -64,11 +80,14 @@ def send_email(row):
         print("Email non configurata")
         return
 
-    subject = f"Meteo {row['timestamp']} | T:{row['temp_c']}C UR:{row['umidita_pct']}% DP:{row['dew_point_c']}C"
+    subject = f"Meteo {row['localita']} — {row['timestamp']} | T:{row['temp_c']}C UR:{row['umidita_pct']}% DP:{row['dew_point_c']}C"
 
     html = f"""<html><body style="font-family:Arial;max-width:500px;margin:auto;">
-<h2 style="background:#0a1628;color:#64ffda;padding:16px;border-radius:8px;">Meteo Report</h2>
-<p style="color:#666;">{row['timestamp']} — GPS: {row['lat']}, {row['lon']}</p>
+<h2 style="background:#0a1628;color:#64ffda;padding:16px;border-radius:8px;">
+  Meteo Report<br>
+  <span style="font-size:0.8em;color:#aab;">{row['localita']}</span>
+</h2>
+<p style="color:#666;">{row['timestamp']}</p>
 <table width="100%" style="border-collapse:collapse;">
 <tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Temperatura</b></td><td style="padding:10px;">{row['temp_c']} °C</td></tr>
 <tr><td style="padding:10px;"><b>Umidità Relativa</b></td><td style="padding:10px;">{row['umidita_pct']} %</td></tr>
