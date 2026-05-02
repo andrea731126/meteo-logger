@@ -12,12 +12,19 @@ from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 
-LATITUDE = float(os.environ.get("LAT", "38.1157"))
-LONGITUDE = float(os.environ.get("LON", "13.3615"))
+LATITUDE = os.environ.get("LAT", "")
+LONGITUDE = os.environ.get("LON", "")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
 EMAIL_PASS = os.environ.get("EMAIL_PASS", "")
 EMAIL_TO = "amarsi@outlook.com"
 CSV_FILE = "data/meteo.csv"
+
+if not LATITUDE or not LONGITUDE:
+    print("Nessun GPS ricevuto — skip.")
+    exit()
+
+LATITUDE = float(LATITUDE)
+LONGITUDE = float(LONGITUDE)
 
 URL = (f"https://api.open-meteo.com/v1/forecast"
        f"?latitude={LATITUDE}&longitude={LONGITUDE}"
@@ -34,8 +41,8 @@ def get_location_name():
             with urllib.request.urlopen(req, timeout=15) as r:
                 data = json.loads(r.read())
             addr = data.get("address", {})
-            city = (addr.get("city") or addr.get("town") or 
-                   addr.get("village") or addr.get("county") or 
+            city = (addr.get("city") or addr.get("town") or
+                   addr.get("village") or addr.get("county") or
                    addr.get("state") or "")
             country = addr.get("country", "")
             name = f"{city}, {country}".strip(", ")
@@ -83,52 +90,74 @@ def save_csv(row):
             w.writeheader()
         w.writerow(row)
 
-def send_email(row):
+def send_daily_email():
     if not EMAIL_FROM or not EMAIL_PASS:
-        print("Email non configurata")
+        return
+    path = Path(CSV_FILE)
+    if not path.exists():
+        return
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            if r["timestamp"].startswith(today):
+                rows.append(r)
+    if not rows:
         return
 
-    subject = f"Meteo {row['localita']} — {row['timestamp']} | T:{row['temp_c']}C UR:{row['umidita_pct']}% DP:{row['dew_point_c']}C"
+    table = ""
+    for r in rows:
+        table += f"""<tr>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['timestamp']}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['localita']}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['temp_c']}°C</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['umidita_pct']}%</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['dew_point_c']}°C</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['pioggia_mm']}mm</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">{r['vento_kmh']}km/h</td>
+        </tr>"""
 
-    html = f"""<html><body style="font-family:Arial;max-width:500px;margin:auto;">
+    html = f"""<html><body style="font-family:Arial;max-width:800px;margin:auto;">
 <h2 style="background:#0a1628;color:#64ffda;padding:16px;border-radius:8px;">
-  Meteo Report<br>
-  <span style="font-size:0.85em;color:#aab;">{row['localita']}</span>
+  Meteo Giornaliero — {today}
 </h2>
-<p style="color:#666;">{row['timestamp']}</p>
-<table width="100%" style="border-collapse:collapse;">
-<tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Temperatura</b></td><td style="padding:10px;">{row['temp_c']} °C</td></tr>
-<tr><td style="padding:10px;"><b>Umidità Relativa</b></td><td style="padding:10px;">{row['umidita_pct']} %</td></tr>
-<tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Dew Point</b></td><td style="padding:10px;">{row['dew_point_c']} °C</td></tr>
-<tr><td style="padding:10px;"><b>Percepita</b></td><td style="padding:10px;">{row['percepita_c']} °C</td></tr>
-<tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Pioggia</b></td><td style="padding:10px;">{row['pioggia_mm']} mm</td></tr>
-<tr><td style="padding:10px;"><b>Vento</b></td><td style="padding:10px;">{row['vento_kmh']} km/h</td></tr>
-<tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Pressione</b></td><td style="padding:10px;">{row['pressione_hpa']} hPa</td></tr>
-<tr><td style="padding:10px;"><b>Coordinate</b></td><td style="padding:10px;">{row['lat']}, {row['lon']}</td></tr>
+<table width="100%" style="border-collapse:collapse;font-size:0.9em;">
+<tr style="background:#0a1628;color:#64ffda;">
+  <th style="padding:8px;">Ora</th>
+  <th style="padding:8px;">Località</th>
+  <th style="padding:8px;">Temp</th>
+  <th style="padding:8px;">Umidità</th>
+  <th style="padding:8px;">Dew Point</th>
+  <th style="padding:8px;">Pioggia</th>
+  <th style="padding:8px;">Vento</th>
+</tr>
+{table}
 </table>
 </body></html>"""
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
+    msg["Subject"] = f"Meteo Giornaliero — {today}"
     msg["From"] = EMAIL_FROM
     msg["To"] = EMAIL_TO
     msg.attach(MIMEText(html, "html"))
 
-    path = Path(CSV_FILE)
-    if path.exists():
-        with open(path, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", "attachment; filename=meteo.csv")
-        msg.attach(part)
+    with open(path, "rb") as f:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(f.read())
+    encoders.encode_base64(part)
+    part.add_header("Content-Disposition", "attachment; filename=meteo.csv")
+    msg.attach(part)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
         s.login(EMAIL_FROM, EMAIL_PASS)
         s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-    print("Email inviata!")
+    print("Email giornaliera inviata!")
 
 row = fetch()
 save_csv(row)
-send_email(row)
-print("Done:", row)
+print("Salvato:", row)
+
+hour = datetime.now(timezone.utc).hour
+if hour == 23:
+    send_daily_email()
