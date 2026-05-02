@@ -4,6 +4,7 @@ import csv
 import os
 import smtplib
 import math
+import time
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -25,18 +26,25 @@ URL = (f"https://api.open-meteo.com/v1/forecast"
        f"&timezone=auto")
 
 def get_location_name():
-    try:
-        geo = f"https://nominatim.openstreetmap.org/reverse?lat={LATITUDE}&lon={LONGITUDE}&format=json"
-        req = urllib.request.Request(geo)
-        req.add_header("User-Agent", "MeteoLogger/1.0")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read())
-        addr = data.get("address", {})
-        city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("county", "")
-        country = addr.get("country", "")
-        return f"{city}, {country}".strip(", ")
-    except:
-        return f"{LATITUDE}, {LONGITUDE}"
+    for attempt in range(3):
+        try:
+            geo = f"https://nominatim.openstreetmap.org/reverse?lat={LATITUDE}&lon={LONGITUDE}&format=json"
+            req = urllib.request.Request(geo)
+            req.add_header("User-Agent", "MeteoLogger/1.0")
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = json.loads(r.read())
+            addr = data.get("address", {})
+            city = (addr.get("city") or addr.get("town") or 
+                   addr.get("village") or addr.get("county") or 
+                   addr.get("state") or "")
+            country = addr.get("country", "")
+            name = f"{city}, {country}".strip(", ")
+            if name:
+                return name
+        except Exception as e:
+            print(f"Tentativo {attempt+1} fallito: {e}")
+            time.sleep(2)
+    return f"Lat {LATITUDE}, Lon {LONGITUDE}"
 
 def dew_point(t, rh):
     a, b = 17.27, 237.7
@@ -85,7 +93,7 @@ def send_email(row):
     html = f"""<html><body style="font-family:Arial;max-width:500px;margin:auto;">
 <h2 style="background:#0a1628;color:#64ffda;padding:16px;border-radius:8px;">
   Meteo Report<br>
-  <span style="font-size:0.8em;color:#aab;">{row['localita']}</span>
+  <span style="font-size:0.85em;color:#aab;">{row['localita']}</span>
 </h2>
 <p style="color:#666;">{row['timestamp']}</p>
 <table width="100%" style="border-collapse:collapse;">
@@ -96,6 +104,7 @@ def send_email(row):
 <tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Pioggia</b></td><td style="padding:10px;">{row['pioggia_mm']} mm</td></tr>
 <tr><td style="padding:10px;"><b>Vento</b></td><td style="padding:10px;">{row['vento_kmh']} km/h</td></tr>
 <tr style="background:#f0f4f8;"><td style="padding:10px;"><b>Pressione</b></td><td style="padding:10px;">{row['pressione_hpa']} hPa</td></tr>
+<tr><td style="padding:10px;"><b>Coordinate</b></td><td style="padding:10px;">{row['lat']}, {row['lon']}</td></tr>
 </table>
 </body></html>"""
 
