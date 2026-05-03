@@ -2,7 +2,7 @@ name: MeteoLogger
 
 on:
   schedule:
-    - cron: '0 4-23 * * *'
+    - cron: '0 * * * *'
   repository_dispatch:
     types: [gps]
   workflow_dispatch:
@@ -21,7 +21,6 @@ jobs:
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           LAT: ${{ github.event.client_payload.lat || '25.8854' }}
           LON: ${{ github.event.client_payload.lon || '-80.1769' }}
-          SEND_EMAIL: ${{ github.event.client_payload.send_email || 'false' }}
         run: python fetch_meteo.py
       - name: Save CSV
         run: |
