@@ -12,22 +12,31 @@ from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 
-LATITUDE = os.environ.get("LAT", "25.8854")
-LONGITUDE = os.environ.get("LON", "-80.1769")
+LATITUDE = float(os.environ.get("LAT", "25.8854"))
+LONGITUDE = float(os.environ.get("LON", "-80.1769"))
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
 EMAIL_PASS = os.environ.get("EMAIL_PASS", "")
 EMAIL_TO = "amarsi@outlook.com"
 CSV_FILE = "data/meteo.csv"
-SEND_EMAIL_NOW = os.environ.get("SEND_EMAIL", "false") == "true"
-
-LATITUDE = float(LATITUDE)
-LONGITUDE = float(LONGITUDE)
 
 URL = (f"https://api.open-meteo.com/v1/forecast"
        f"?latitude={LATITUDE}&longitude={LONGITUDE}"
        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
        f"precipitation,wind_speed_10m,wind_direction_10m,weather_code,pressure_msl"
        f"&timezone=auto")
+
+def get_local_hour():
+    try:
+        tz_url = f"https://timeapi.io/api/timezone/coordinate?latitude={LATITUDE}&longitude={LONGITUDE}"
+        req = urllib.request.Request(tz_url)
+        req.add_header("User-Agent", "MeteoLogger/1.0")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+        offset = data.get("currentUtcOffset", {}).get("seconds", 0)
+        utc_hour = datetime.now(timezone.utc).hour
+        return (utc_hour + offset // 3600) % 24
+    except:
+        return datetime.now(timezone.utc).hour
 
 def get_location_name():
     for attempt in range(3):
@@ -158,6 +167,8 @@ row = fetch()
 save_csv(row)
 print("Salvato:", row)
 
-utc_hour = datetime.now(timezone.utc).hour
-if utc_hour == 3 or SEND_EMAIL_NOW:
+local_hour = get_local_hour()
+print(f"Ora locale: {local_hour}")
+
+if local_hour == 23:
     send_daily_email()
