@@ -12,16 +12,13 @@ from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 
-LATITUDE = os.environ.get("LAT", "")
-LONGITUDE = os.environ.get("LON", "")
+LATITUDE = os.environ.get("LAT", "25.8854")
+LONGITUDE = os.environ.get("LON", "-80.1769")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
 EMAIL_PASS = os.environ.get("EMAIL_PASS", "")
 EMAIL_TO = "amarsi@outlook.com"
 CSV_FILE = "data/meteo.csv"
-
-if not LATITUDE or not LONGITUDE:
-    print("Nessun GPS — skip.")
-    exit()
+SEND_EMAIL_NOW = os.environ.get("SEND_EMAIL", "false") == "true"
 
 LATITUDE = float(LATITUDE)
 LONGITUDE = float(LONGITUDE)
@@ -31,18 +28,6 @@ URL = (f"https://api.open-meteo.com/v1/forecast"
        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
        f"precipitation,wind_speed_10m,wind_direction_10m,weather_code,pressure_msl"
        f"&timezone=auto")
-
-def get_timezone_offset():
-    try:
-        tz_url = f"https://timeapi.io/api/timezone/coordinate?latitude={LATITUDE}&longitude={LONGITUDE}"
-        req = urllib.request.Request(tz_url)
-        req.add_header("User-Agent", "MeteoLogger/1.0")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read())
-        offset = data.get("currentUtcOffset", {}).get("seconds", 0)
-        return offset // 3600
-    except:
-        return 0
 
 def get_location_name():
     for attempt in range(3):
@@ -104,9 +89,11 @@ def save_csv(row):
 
 def send_daily_email():
     if not EMAIL_FROM or not EMAIL_PASS:
+        print("Email non configurata")
         return
     path = Path(CSV_FILE)
     if not path.exists():
+        print("CSV non trovato")
         return
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     rows = []
@@ -116,6 +103,7 @@ def send_daily_email():
             if r["timestamp"].startswith(today):
                 rows.append(r)
     if not rows:
+        print("Nessun dato oggi")
         return
 
     table = ""
@@ -137,9 +125,9 @@ def send_daily_email():
 <table width="100%" style="border-collapse:collapse;font-size:0.9em;">
 <tr style="background:#0a1628;color:#64ffda;">
   <th style="padding:8px;">Ora</th>
-  <th style="padding:8px;">Località</th>
+  <th style="padding:8px;">Localita</th>
   <th style="padding:8px;">Temp</th>
-  <th style="padding:8px;">Umidità</th>
+  <th style="padding:8px;">Umidita</th>
   <th style="padding:8px;">Dew Point</th>
   <th style="padding:8px;">Pioggia</th>
   <th style="padding:8px;">Vento</th>
@@ -171,9 +159,5 @@ save_csv(row)
 print("Salvato:", row)
 
 utc_hour = datetime.now(timezone.utc).hour
-tz_offset = get_timezone_offset()
-local_hour = (utc_hour + tz_offset) % 24
-print(f"Ora locale: {local_hour}:00 (UTC+{tz_offset})")
-
-if local_hour == 23:
+if utc_hour == 3 or SEND_EMAIL_NOW:
     send_daily_email()
