@@ -25,19 +25,6 @@ URL = (f"https://api.open-meteo.com/v1/forecast"
        f"precipitation,wind_speed_10m,wind_direction_10m,weather_code,pressure_msl"
        f"&timezone=auto")
 
-def get_local_hour():
-    try:
-        tz_url = f"https://timeapi.io/api/timezone/coordinate?latitude={LATITUDE}&longitude={LONGITUDE}"
-        req = urllib.request.Request(tz_url)
-        req.add_header("User-Agent", "MeteoLogger/1.0")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read())
-        offset = data.get("currentUtcOffset", {}).get("seconds", 0)
-        utc_hour = datetime.now(timezone.utc).hour
-        return (utc_hour + offset // 3600) % 24
-    except:
-        return datetime.now(timezone.utc).hour
-
 def get_location_name():
     for attempt in range(3):
         try:
@@ -167,8 +154,8 @@ row = fetch()
 save_csv(row)
 print("Salvato:", row)
 
-local_hour = get_local_hour()
-print(f"Ora locale: {local_hour}")
+utc_hour = datetime.now(timezone.utc).hour
+print(f"UTC hour: {utc_hour}")
 
-if local_hour == 23:
+if utc_hour == 3:
     send_daily_email()
