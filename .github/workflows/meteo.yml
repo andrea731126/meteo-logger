@@ -6,6 +6,11 @@ on:
   repository_dispatch:
     types: [gps]
   workflow_dispatch:
+    inputs:
+      force_email:
+        description: 'Manda email adesso'
+        required: false
+        default: 'false'
 
 jobs:
   meteo:
@@ -21,6 +26,7 @@ jobs:
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           LAT: ${{ github.event.client_payload.lat || '25.8854' }}
           LON: ${{ github.event.client_payload.lon || '-80.1769' }}
+          FORCE_EMAIL: ${{ github.event.inputs.force_email || 'false' }}
         run: python fetch_meteo.py
       - name: Save CSV
         run: |
