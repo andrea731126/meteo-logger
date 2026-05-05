@@ -18,7 +18,6 @@ EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
 EMAIL_PASS = os.environ.get("EMAIL_PASS", "")
 EMAIL_TO = "amarsi@outlook.com"
 CSV_FILE = "data/meteo.csv"
-FORCE_EMAIL = os.environ.get("FORCE_EMAIL", "false") == "true"
 
 URL = (f"https://api.open-meteo.com/v1/forecast"
        f"?latitude={LATITUDE}&longitude={LONGITUDE}"
@@ -103,7 +102,7 @@ def send_daily_email():
         print("Nessun dato oggi")
         return
 
-    print(f"Mando email con {len(rows)} rilevazioni")
+    print(f"Invio email con {len(rows)} rilevazioni")
 
     table = ""
     for r in rows:
@@ -152,9 +151,9 @@ def send_daily_email():
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
             s.login(EMAIL_FROM, EMAIL_PASS)
             s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-        print("Email inviata con successo!")
+        print("Email inviata!")
     except Exception as e:
-        print(f"ERRORE EMAIL: {e}")
+        print(f"ERRORE: {e}")
 
 row = fetch()
 save_csv(row)
@@ -162,7 +161,6 @@ print("Salvato:", row)
 
 utc_hour = datetime.now(timezone.utc).hour
 print(f"UTC hour: {utc_hour}")
-print(f"FORCE_EMAIL: {FORCE_EMAIL}")
 
-if utc_hour == 3 or FORCE_EMAIL:
+if utc_hour == 23:
     send_daily_email()
