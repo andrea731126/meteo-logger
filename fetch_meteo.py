@@ -23,7 +23,8 @@ URL = (f"https://api.open-meteo.com/v1/forecast"
        f"?latitude={LATITUDE}&longitude={LONGITUDE}"
        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
        f"precipitation,wind_speed_10m,wind_direction_10m,weather_code,pressure_msl"
-       f"&timezone=auto")
+       f"&timezone=auto"
+       f"&hourly=temperature_2m&forecast_days=1")
 
 def get_location_name():
     for attempt in range(3):
@@ -57,10 +58,14 @@ def fetch():
     c = data["current"]
     t = float(c.get("temperature_2m", 0))
     rh = float(c.get("relative_humidity_2m", 0))
-    now = datetime.now(timezone.utc).astimezone()
+    
+    # Ora locale dal timezone di Open-Meteo
+    local_time_str = c.get("time", "")
+    local_hour = int(local_time_str[11:13]) if local_time_str else datetime.now(timezone.utc).hour
+    
     localita = get_location_name()
     return {
-        "timestamp": now.strftime("%Y-%m-%d %H:%M"),
+        "timestamp": local_time_str,
         "localita": localita,
         "lat": round(LATITUDE, 4),
         "lon": round(LONGITUDE, 4),
@@ -71,17 +76,19 @@ def fetch():
         "pioggia_mm": c.get("precipitation", 0),
         "vento_kmh": round(float(c.get("wind_speed_10m", 0)), 1),
         "pressione_hpa": round(float(c.get("pressure_msl", 0)), 1),
+        "local_hour": local_hour,
     }
 
 def save_csv(row):
     path = Path(CSV_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
+    save_row = {k: v for k, v in row.items() if k != "local_hour"}
     new = not path.exists()
     with open(path, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=row.keys())
+        w = csv.DictWriter(f, fieldnames=save_row.keys())
         if new:
             w.writeheader()
-        w.writerow(row)
+        w.writerow(save_row)
 
 def send_daily_email():
     if not EMAIL_FROM or not EMAIL_PASS:
@@ -91,7 +98,7 @@ def send_daily_email():
     if not path.exists():
         print("CSV non trovato")
         return
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = row["timestamp"][:10]
     rows = []
     with open(path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -102,7 +109,7 @@ def send_daily_email():
         print("Nessun dato oggi")
         return
 
-    print(f"Invio email con {len(rows)} rilevazioni")
+    print(f"Invio email con {len(rows)} rilevazioni per {today}")
 
     table = ""
     for r in rows:
@@ -157,10 +164,9 @@ def send_daily_email():
 
 row = fetch()
 save_csv(row)
-print("Salvato:", row)
+local_hour = row["local_hour"]
+print(f"Salvato: {row['timestamp']} ora locale: {local_hour}:00 — {row['localita']}")
 
-utc_hour = datetime.now(timezone.utc).hour
-print(f"UTC hour: {utc_hour}")
-
-if utc_hour == 23:
+if local_hour == 23:
     send_daily_email()
+       
