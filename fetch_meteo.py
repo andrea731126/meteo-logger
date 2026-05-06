@@ -5,7 +5,7 @@ import os
 import smtplib
 import math
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -57,11 +57,10 @@ def fetch():
     c = data["current"]
     t = float(c.get("temperature_2m", 0))
     rh = float(c.get("relative_humidity_2m", 0))
-    local_time = c.get("time", "")
-    local_hour = int(local_time[11:13]) if local_time else 0
+    now_utc = datetime.now(timezone.utc)
     localita = get_location_name()
     return {
-        "timestamp": local_time,
+        "timestamp": now_utc.strftime("%Y-%m-%d %H:%M UTC"),
         "localita": localita,
         "lat": round(LATITUDE, 4),
         "lon": round(LONGITUDE, 4),
@@ -72,29 +71,40 @@ def fetch():
         "pioggia_mm": c.get("precipitation", 0),
         "vento_kmh": round(float(c.get("wind_speed_10m", 0)), 1),
         "pressione_hpa": round(float(c.get("pressure_msl", 0)), 1),
-        "local_hour": local_hour,
     }
 
 def save_csv(row):
     path = Path(CSV_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
-    save_row = {k: v for k, v in row.items() if k != "local_hour"}
     new = not path.exists()
     with open(path, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=save_row.keys())
+        w = csv.DictWriter(f, fieldnames=row.keys())
         if new:
             w.writeheader()
-        w.writerow(save_row)
+        w.writerow(row)
 
-def send_daily_email(today, rows):
+def send_daily_email():
     if not EMAIL_FROM or not EMAIL_PASS:
         print("Email non configurata")
         return
-    if not rows:
-        print("Nessun dato")
+    path = Path(CSV_FILE)
+    if not path.exists():
+        print("CSV non trovato")
         return
 
-    print(f"Invio email con {len(rows)} rilevazioni per {today}")
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            if r["timestamp"].startswith(yesterday):
+                rows.append(r)
+
+    if not rows:
+        print(f"Nessun dato per {yesterday}")
+        return
+
+    print(f"Invio email con {len(rows)} rilevazioni per {yesterday}")
 
     table = ""
     for r in rows:
@@ -110,11 +120,11 @@ def send_daily_email(today, rows):
 
     html = f"""<html><body style="font-family:Arial;max-width:800px;margin:auto;">
 <h2 style="background:#0a1628;color:#64ffda;padding:16px;border-radius:8px;">
-  Meteo Giornaliero — {today}
+  Meteo — {yesterday}
 </h2>
 <table width="100%" style="border-collapse:collapse;font-size:0.9em;">
 <tr style="background:#0a1628;color:#64ffda;">
-  <th style="padding:8px;">Ora</th>
+  <th style="padding:8px;">Ora UTC</th>
   <th style="padding:8px;">Localita</th>
   <th style="padding:8px;">Temp</th>
   <th style="padding:8px;">Umidita</th>
@@ -127,19 +137,17 @@ def send_daily_email(today, rows):
 </body></html>"""
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Meteo {today} — {rows[0]['localita']} — {len(rows)} rilevazioni"
+    msg["Subject"] = f"Meteo {yesterday} — {rows[0]['localita']} — {len(rows)} rilevazioni"
     msg["From"] = EMAIL_FROM
     msg["To"] = EMAIL_TO
     msg.attach(MIMEText(html, "html"))
 
-    path = Path(CSV_FILE)
-    if path.exists():
-        with open(path, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", "attachment; filename=meteo.csv")
-        msg.attach(part)
+    with open(path, "rb") as f:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(f.read())
+    encoders.encode_base64(part)
+    part.add_header("Content-Disposition", "attachment; filename=meteo.csv")
+    msg.attach(part)
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
@@ -152,17 +160,9 @@ def send_daily_email(today, rows):
 # Main
 row = fetch()
 save_csv(row)
-local_hour = row["local_hour"]
-today = row["timestamp"][:10]
-print(f"Ora locale: {local_hour}:00 — {row['localita']} — {today}")
+utc_hour = datetime.now(timezone.utc).hour
+print(f"Salvato: {row['timestamp']} — {row['localita']}")
+print(f"UTC hour: {utc_hour}")
 
-if local_hour in [18, 23]:
-    path = Path(CSV_FILE)
-    rows = []
-    if path.exists():
-        with open(path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                if r["timestamp"].startswith(today):
-                    rows.append(r)
-    send_daily_email(today, rows)
+if utc_hour == 8:
+    send_daily_email()
