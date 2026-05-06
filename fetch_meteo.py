@@ -156,7 +156,7 @@ local_hour = row["local_hour"]
 today = row["timestamp"][:10]
 print(f"Ora locale: {local_hour}:00 — {row['localita']} — {today}")
 
-if local_hour == 23:
+if local_hour in [18, 23]:
     path = Path(CSV_FILE)
     rows = []
     if path.exists():
