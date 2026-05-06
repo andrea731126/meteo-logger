@@ -23,8 +23,7 @@ URL = (f"https://api.open-meteo.com/v1/forecast"
        f"?latitude={LATITUDE}&longitude={LONGITUDE}"
        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
        f"precipitation,wind_speed_10m,wind_direction_10m,weather_code,pressure_msl"
-       f"&timezone=auto"
-       f"&hourly=temperature_2m&forecast_days=1")
+       f"&timezone=auto")
 
 def get_location_name():
     for attempt in range(3):
@@ -58,14 +57,11 @@ def fetch():
     c = data["current"]
     t = float(c.get("temperature_2m", 0))
     rh = float(c.get("relative_humidity_2m", 0))
-    
-    # Ora locale dal timezone di Open-Meteo
-    local_time_str = c.get("time", "")
-    local_hour = int(local_time_str[11:13]) if local_time_str else datetime.now(timezone.utc).hour
-    
+    local_time = c.get("time", "")
+    local_hour = int(local_time[11:13]) if local_time else 0
     localita = get_location_name()
     return {
-        "timestamp": local_time_str,
+        "timestamp": local_time,
         "localita": localita,
         "lat": round(LATITUDE, 4),
         "lon": round(LONGITUDE, 4),
@@ -90,23 +86,12 @@ def save_csv(row):
             w.writeheader()
         w.writerow(save_row)
 
-def send_daily_email():
+def send_daily_email(today, rows):
     if not EMAIL_FROM or not EMAIL_PASS:
         print("Email non configurata")
         return
-    path = Path(CSV_FILE)
-    if not path.exists():
-        print("CSV non trovato")
-        return
-    today = row["timestamp"][:10]
-    rows = []
-    with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            if r["timestamp"].startswith(today):
-                rows.append(r)
     if not rows:
-        print("Nessun dato oggi")
+        print("Nessun dato")
         return
 
     print(f"Invio email con {len(rows)} rilevazioni per {today}")
@@ -142,17 +127,19 @@ def send_daily_email():
 </body></html>"""
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Meteo Giornaliero — {today} — {len(rows)} rilevazioni"
+    msg["Subject"] = f"Meteo {today} — {rows[0]['localita']} — {len(rows)} rilevazioni"
     msg["From"] = EMAIL_FROM
     msg["To"] = EMAIL_TO
     msg.attach(MIMEText(html, "html"))
 
-    with open(path, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-    encoders.encode_base64(part)
-    part.add_header("Content-Disposition", "attachment; filename=meteo.csv")
-    msg.attach(part)
+    path = Path(CSV_FILE)
+    if path.exists():
+        with open(path, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment; filename=meteo.csv")
+        msg.attach(part)
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
@@ -160,13 +147,22 @@ def send_daily_email():
             s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
         print("Email inviata!")
     except Exception as e:
-        print(f"ERRORE: {e}")
+        print(f"ERRORE EMAIL: {e}")
 
+# Main
 row = fetch()
 save_csv(row)
 local_hour = row["local_hour"]
-print(f"Salvato: {row['timestamp']} ora locale: {local_hour}:00 — {row['localita']}")
+today = row["timestamp"][:10]
+print(f"Ora locale: {local_hour}:00 — {row['localita']} — {today}")
 
 if local_hour == 23:
-    send_daily_email()
-       
+    path = Path(CSV_FILE)
+    rows = []
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                if r["timestamp"].startswith(today):
+                    rows.append(r)
+    send_daily_email(today, rows)
