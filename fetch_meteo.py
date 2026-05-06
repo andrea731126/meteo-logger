@@ -120,11 +120,11 @@ def send_daily_email():
 
     html = f"""<html><body style="font-family:Arial;max-width:800px;margin:auto;">
 <h2 style="background:#0a1628;color:#64ffda;padding:16px;border-radius:8px;">
-  Meteo — {yesterday}
+  Meteo — {yesterday} — {rows[0]['localita']}
 </h2>
 <table width="100%" style="border-collapse:collapse;font-size:0.9em;">
 <tr style="background:#0a1628;color:#64ffda;">
-  <th style="padding:8px;">Ora UTC</th>
+  <th style="padding:8px;">Ora</th>
   <th style="padding:8px;">Localita</th>
   <th style="padding:8px;">Temp</th>
   <th style="padding:8px;">Umidita</th>
@@ -157,7 +157,6 @@ def send_daily_email():
     except Exception as e:
         print(f"ERRORE EMAIL: {e}")
 
-# Main
 row = fetch()
 save_csv(row)
 utc_hour = datetime.now(timezone.utc).hour
