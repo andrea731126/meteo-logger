@@ -163,5 +163,5 @@ utc_hour = datetime.now(timezone.utc).hour
 print(f"Salvato: {row['timestamp']} — {row['localita']}")
 print(f"UTC hour: {utc_hour}")
 
-if utc_hour == 8:
+if utc_hour in [8, 9, 10, 11]:
     send_daily_email()
